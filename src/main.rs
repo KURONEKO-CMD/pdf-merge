@@ -17,10 +17,14 @@ fn main() {
     let dir = &cli.input_dir;
     let mut output_path = std::path::PathBuf::from(&cli.output);
 
-    if cli.output == "merged.pdf" {
-        output_path = std::path::PathBuf::from(&cli.input_dir);
-        output_path.push("merged.pdf");
+    // 如果用户给的是相对路径，就拼接到输入目录
+
+    if output_path.is_relative() {
+        let mut new_path = std::path::PathBuf::from(&cli.input_dir);
+        new_path.push(&output_path);
+        output_path = new_path;
     }
+
 
 
     let mut pdf_files: Vec<_> = WalkDir::new(dir)
