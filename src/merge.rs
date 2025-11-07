@@ -1,11 +1,10 @@
-use globset::{Glob, GlobSet, GlobSetBuilder};
 use lopdf::{Dictionary, Document, Object, ObjectId};
 use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
-use walkdir::WalkDir;
 
 use crate::spec;
 use crate::progress::ProgressSink;
+use crate::scan;
 
 pub fn run(
     input_dir: &Path,
@@ -22,29 +21,8 @@ pub fn run(
             .with_context(|| format!("创建输出目录失败: {}", parent.display()))?;
     }
 
-    // Build glob sets (relative to input_dir)
-    let include_set = build_globset(includes).with_context(|| "包含规则无效".to_string())?;
-    let exclude_set = build_globset(excludes).with_context(|| "排除规则无效".to_string())?;
-
-    // Scan pdf files
-    let mut pdf_files: Vec<_> = WalkDir::new(input_dir)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().extension().map(|ext| ext.eq_ignore_ascii_case("pdf")).unwrap_or(false))
-        .filter(|e| e.path() != output)
-        .filter(|e| {
-            let rel = e.path().strip_prefix(input_dir).unwrap_or(e.path());
-            let rel_path = rel;
-            // include logic: if include_set is empty, include by default; else must match one
-            let include_ok = if include_set.is_empty() { true } else { include_set.is_match(rel_path) };
-            // exclude logic: if matches any exclude, drop
-            let exclude_hit = if exclude_set.is_empty() { false } else { exclude_set.is_match(rel_path) };
-            include_ok && !exclude_hit
-        })
-        .map(|e| e.path().to_owned())
-        .collect();
-    pdf_files.sort();
+    // Scan pdf files (reuse scanner)
+    let pdf_files = scan::collect_pdfs(input_dir, includes, excludes, &[output.to_path_buf()])?;
 
     if pdf_files.is_empty() {
         anyhow::bail!("未在目录中找到 PDF: {}", input_dir.display());
@@ -125,14 +103,4 @@ fn merge_selected_pages(files: &[PathBuf], output: &Path, pages_spec: Option<&st
     Ok(())
 }
 
-fn build_globset(patterns: &[String]) -> anyhow::Result<GlobSet> {
-    if patterns.is_empty() {
-        return Ok(GlobSetBuilder::new().build()?);
-    }
-    let mut builder = GlobSetBuilder::new();
-    for pat in patterns {
-        let g = Glob::new(pat).with_context(|| format!("无效的 GLOB: {}", pat))?;
-        builder.add(g);
-    }
-    Ok(builder.build()?)
-}
+// scanner helpers moved to crate::scan

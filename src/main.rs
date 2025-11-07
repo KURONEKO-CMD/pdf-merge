@@ -3,6 +3,7 @@ mod merge;
 mod spec;
 mod split;
 mod progress;
+mod scan;
 #[cfg(feature = "tui")]
 mod tui;
 
