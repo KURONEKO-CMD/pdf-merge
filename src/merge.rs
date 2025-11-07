@@ -1,6 +1,8 @@
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use lopdf::{Dictionary, Document, Object, ObjectId};
 use std::path::{Path, PathBuf};
+use indicatif::{ProgressBar, ProgressStyle};
+use anyhow::{Context, Result};
 use walkdir::WalkDir;
 
 use crate::spec;
@@ -11,15 +13,17 @@ pub fn run(
     pages_spec: Option<&str>,
     includes: &[String],
     excludes: &[String],
-) -> Result<(), String> {
+    force: bool,
+) -> Result<()> {
     // Resolve output directory
     if let Some(parent) = output.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("创建输出目录失败 {}: {}", parent.display(), e))?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("创建输出目录失败: {}", parent.display()))?;
     }
 
     // Build glob sets (relative to input_dir)
-    let include_set = build_globset(includes).map_err(|e| format!("包含规则无效: {}", e))?;
-    let exclude_set = build_globset(excludes).map_err(|e| format!("排除规则无效: {}", e))?;
+    let include_set = build_globset(includes).with_context(|| "包含规则无效".to_string())?;
+    let exclude_set = build_globset(excludes).with_context(|| "排除规则无效".to_string())?;
 
     // Scan pdf files
     let mut pdf_files: Vec<_> = WalkDir::new(input_dir)
@@ -42,22 +46,37 @@ pub fn run(
     pdf_files.sort();
 
     if pdf_files.is_empty() {
-        return Err(format!("未在目录中找到 PDF: {}", input_dir.display()));
+        anyhow::bail!("未在目录中找到 PDF: {}", input_dir.display());
     }
 
-    merge_selected_pages(&pdf_files, output, pages_spec).map_err(|e| e.to_string())?;
+    // Progress bar per file
+    let pb = ProgressBar::new(pdf_files.len() as u64);
+    pb.set_style(ProgressStyle::with_template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+        .unwrap()
+        .progress_chars("##-"));
+    pb.set_message("准备合并...");
+
+    merge_selected_pages(&pdf_files, output, pages_spec, &pb, force)?;
+    pb.finish_with_message("合并完成");
     Ok(())
 }
 
-fn merge_selected_pages(files: &[PathBuf], output: &Path, pages_spec: Option<&str>) -> lopdf::Result<()> {
+fn merge_selected_pages(files: &[PathBuf], output: &Path, pages_spec: Option<&str>, pb: &ProgressBar, force: bool) -> Result<()> {
+    // Overwrite protection handled here to ensure we fail early
+    if output.exists() && !force {
+        anyhow::bail!("输出文件已存在: {} (使用 --force 覆盖)", output.display());
+    }
     let mut doc = Document::with_version("1.5");
     let mut page_ids: Vec<ObjectId> = Vec::new();
 
     for path in files {
-        let mut pdf = Document::load(path)?;
+        pb.set_message(path.file_name().and_then(|s| s.to_str()).unwrap_or("加载中..."));
+        let mut pdf = Document::load(path)
+            .with_context(|| format!("加载 PDF 失败: {}", path.display()))?;
         let total_pages = pdf.get_pages().len();
         let indices: Option<Vec<usize>> = if let Some(spec_str) = pages_spec {
-            let ranges = spec::parse_spec(spec_str).map_err(|e| lopdf::Error::IO(std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string())))?;
+            let ranges = spec::parse_spec(spec_str)
+                .with_context(|| format!("解析页码范围失败: {}", spec_str))?;
             Some(spec::expand_to_indexes(&ranges, total_pages))
         } else { None };
 
@@ -76,6 +95,7 @@ fn merge_selected_pages(files: &[PathBuf], output: &Path, pages_spec: Option<&st
         }
         page_ids.extend(current);
         doc.objects.extend(pdf.objects);
+        pb.inc(1);
     }
 
     let pages_id = doc.new_object_id();
@@ -100,18 +120,19 @@ fn merge_selected_pages(files: &[PathBuf], output: &Path, pages_spec: Option<&st
     doc.trailer = Dictionary::new();
     doc.trailer.set("Root", Object::Reference(catalog_id));
     doc.compress();
-    doc.save(output)?;
+    doc.save(output)
+        .with_context(|| format!("写入输出失败: {}", output.display()))?;
     Ok(())
 }
 
-fn build_globset(patterns: &[String]) -> Result<GlobSet, String> {
+fn build_globset(patterns: &[String]) -> anyhow::Result<GlobSet> {
     if patterns.is_empty() {
-        return Ok(GlobSetBuilder::new().build().map_err(|e| e.to_string())?);
+        return Ok(GlobSetBuilder::new().build()?);
     }
     let mut builder = GlobSetBuilder::new();
     for pat in patterns {
-        let g = Glob::new(pat).map_err(|e| format!("{} ({})", pat, e))?;
+        let g = Glob::new(pat).with_context(|| format!("无效的 GLOB: {}", pat))?;
         builder.add(g);
     }
-    builder.build().map_err(|e| e.to_string())
+    Ok(builder.build()?)
 }

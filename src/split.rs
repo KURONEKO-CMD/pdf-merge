@@ -1,27 +1,34 @@
 use lopdf::{Dictionary, Document, Object, ObjectId};
 use std::path::Path;
+use indicatif::{ProgressBar, ProgressStyle};
+use anyhow::{Result, Context};
 
 use crate::spec::{self, PageRange};
 
-pub fn run(input: &Path, out_dir: &Path, each: bool, ranges_spec: Option<&str>, pattern: &str) -> Result<(), String> {
-    std::fs::create_dir_all(out_dir).map_err(|e| format!("创建输出目录失败 {}: {}", out_dir.display(), e))?;
+pub fn run(input: &Path, out_dir: &Path, each: bool, ranges_spec: Option<&str>, pattern: &str, force: bool) -> Result<()> {
+    std::fs::create_dir_all(out_dir)
+        .with_context(|| format!("创建输出目录失败: {}", out_dir.display()))?;
 
     let base = input.file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("output");
 
-    let pdf = Document::load(input).map_err(|e| e.to_string())?;
+    let pdf = Document::load(input).with_context(|| format!("加载 PDF 失败: {}", input.display()))?;
     let total_pages = pdf.get_pages().len();
-    if total_pages == 0 { return Err("输入 PDF 没有可用页面".into()); }
+    if total_pages == 0 { anyhow::bail!("输入 PDF 没有可用页面"); }
 
     // Determine groups
     let groups: Vec<PageRange> = if each {
         (1..=total_pages).map(|p| PageRange { start: p, end: Some(p) }).collect()
     } else if let Some(spec_str) = ranges_spec {
-        spec::parse_spec(spec_str).map_err(|e| e.to_string())?
+        spec::parse_spec(spec_str).with_context(|| format!("解析页码范围失败: {}", spec_str))?
     } else {
-        return Err("请使用 --each 或 --ranges 指定分割方式".into());
+        anyhow::bail!("请使用 --each 或 --ranges 指定分割方式");
     };
+
+    let pb = ProgressBar::new(groups.len() as u64);
+    pb.set_style(ProgressStyle::with_template("[{elapsed_precise}] [{bar:40.green/blue}] {pos}/{len} {msg}").unwrap().progress_chars("##-"));
+    pb.set_message("准备分割...");
 
     for (idx, g) in groups.iter().enumerate() {
         let start = g.start.max(1);
@@ -32,7 +39,7 @@ pub fn run(input: &Path, out_dir: &Path, each: bool, ranges_spec: Option<&str>, 
         let mut page_ids: Vec<ObjectId> = Vec::new();
 
         // Load fresh copy to avoid side effects
-        let mut part_pdf = Document::load(input).map_err(|e| e.to_string())?;
+        let mut part_pdf = Document::load(input).with_context(|| format!("加载 PDF 失败: {}", input.display()))?;
         let offset = out_doc.max_id + 1;
         part_pdf.renumber_objects_with(offset);
         out_doc.max_id = part_pdf.max_id;
@@ -74,10 +81,14 @@ pub fn run(input: &Path, out_dir: &Path, each: bool, ranges_spec: Option<&str>, 
 
         let out_name = fill_pattern(pattern, base, start, end, idx + 1);
         let out_path = out_dir.join(out_name);
+        if out_path.exists() && !force {
+            anyhow::bail!("输出文件已存在: {} (使用 --force 覆盖)", out_path.display());
+        }
         if let Some(parent) = out_path.parent() { std::fs::create_dir_all(parent).ok(); }
-        out_doc.save(&out_path).map_err(|e| e.to_string())?;
+        out_doc.save(&out_path).with_context(|| format!("写入输出失败: {}", out_path.display()))?;
+        pb.inc(1);
     }
-
+    pb.finish_with_message("分割完成");
     Ok(())
 }
 

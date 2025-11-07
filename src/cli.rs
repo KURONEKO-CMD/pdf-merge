@@ -42,11 +42,14 @@ pub struct MergeArgs {
     /// Exclude files matching these globs (relative to input_dir). Repeatable.
     #[arg(long, value_name = "GLOB")]
     pub exclude: Vec<String>,
+    /// Overwrite output if it already exists
+    #[arg(long)]
+    pub force: bool,
 }
 
 impl Default for MergeArgs {
     fn default() -> Self {
-        MergeArgs { input_dir: ".".into(), output: "merged.pdf".into(), pages: None, include: vec![], exclude: vec![] }
+        MergeArgs { input_dir: ".".into(), output: "merged.pdf".into(), pages: None, include: vec![], exclude: vec![], force: false }
     }
 }
 
@@ -67,4 +70,7 @@ pub struct SplitArgs {
     /// Output filename pattern, supports {base},{start},{end},{index}
     #[arg(long, value_name = "PATTERN", default_value = "{base}-{start}-{end}.pdf")]
     pub pattern: String,
+    /// Overwrite output files if they already exist
+    #[arg(long)]
+    pub force: bool,
 }

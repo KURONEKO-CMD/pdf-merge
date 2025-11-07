@@ -16,11 +16,13 @@
   - 指定目录与输出：`pdf-ops merge -i ./docs -o merged.pdf`
   - 按范围合并（对每个输入 PDF 应用同一规则）：`pdf-ops merge -i ./in --pages "1-3,5,10-"`
   - 过滤文件（相对 `--input-dir`）：`--include <GLOB>` 仅包含、`--exclude <GLOB>` 排除，可重复传入；示例：`--include "**/*.pdf" --exclude "backup/**"`
+  - 覆盖输出：若输出已存在需显式 `--force`，否则报错并中止。
 
 - 分割（split）：
   - 默认每页一个文件（无需传参）：`pdf-ops split -i ./input.pdf -d ./out`
   - 或显式 `--each`：`pdf-ops split -i ./input.pdf -d ./out --each`
   - 指定范围分割：`pdf-ops split -i ./input.pdf -d ./out --ranges "1-3,4-6,7-"`
+  - 覆盖输出：若目标文件存在需 `--force`，否则报错中止。
   - 输出命名模板（可用变量 `{base},{start},{end},{index}`）：`--pattern "{base}-{start}-{end}.pdf"`
 
 行为说明：
@@ -35,5 +37,7 @@
 - 风格：`cargo fmt --all`、`cargo clippy --all-targets --all-features -D warnings`
 - 运行：`cargo run -- merge -i ./samples -o merged.pdf`
 - 测试（建议遵循 TDD）：`cargo test`
+
+提示：命令在终端中会显示进度条（合并按文件、分割按任务组）。
 
 如需更多细节与项目结构，请查看 `docs/PROJECT_STRUCTURE.md`。

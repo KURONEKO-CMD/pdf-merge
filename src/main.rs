@@ -18,7 +18,7 @@ fn main() {
                 output_path = new_path;
             }
             let input_dir = PathBuf::from(&args.input_dir);
-            if let Err(e) = merge::run(&input_dir, &output_path, args.pages.as_deref(), &args.include, &args.exclude) {
+            if let Err(e) = merge::run(&input_dir, &output_path, args.pages.as_deref(), &args.include, &args.exclude, args.force) {
                 eprintln!("❌ 合并失败: {}", e);
                 std::process::exit(1);
             }
@@ -26,7 +26,7 @@ fn main() {
         }
         Commands::Split(args) => {
             let each = if args.ranges.is_none() { true } else { args.each };
-            if let Err(e) = split::run(&args.input, &args.out_dir, each, args.ranges.as_deref(), &args.pattern) {
+            if let Err(e) = split::run(&args.input, &args.out_dir, each, args.ranges.as_deref(), &args.pattern, args.force) {
                 eprintln!("❌ 分割失败: {}", e);
                 std::process::exit(1);
             }
