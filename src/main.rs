@@ -18,14 +18,15 @@ fn main() {
                 output_path = new_path;
             }
             let input_dir = PathBuf::from(&args.input_dir);
-            if let Err(e) = merge::run(&input_dir, &output_path, args.pages.as_deref()) {
+            if let Err(e) = merge::run(&input_dir, &output_path, args.pages.as_deref(), &args.include, &args.exclude) {
                 eprintln!("❌ 合并失败: {}", e);
                 std::process::exit(1);
             }
             println!("✅ 合并完成 -> {}", output_path.display());
         }
         Commands::Split(args) => {
-            if let Err(e) = split::run(&args.input, &args.out_dir, args.each, args.ranges.as_deref(), &args.pattern) {
+            let each = if args.ranges.is_none() { true } else { args.each };
+            if let Err(e) = split::run(&args.input, &args.out_dir, each, args.ranges.as_deref(), &args.pattern) {
                 eprintln!("❌ 分割失败: {}", e);
                 std::process::exit(1);
             }

@@ -1,14 +1,25 @@
+use globset::{Glob, GlobSet, GlobSetBuilder};
 use lopdf::{Dictionary, Document, Object, ObjectId};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 use crate::spec;
 
-pub fn run(input_dir: &Path, output: &Path, pages_spec: Option<&str>) -> Result<(), String> {
+pub fn run(
+    input_dir: &Path,
+    output: &Path,
+    pages_spec: Option<&str>,
+    includes: &[String],
+    excludes: &[String],
+) -> Result<(), String> {
     // Resolve output directory
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建输出目录失败 {}: {}", parent.display(), e))?;
     }
+
+    // Build glob sets (relative to input_dir)
+    let include_set = build_globset(includes).map_err(|e| format!("包含规则无效: {}", e))?;
+    let exclude_set = build_globset(excludes).map_err(|e| format!("排除规则无效: {}", e))?;
 
     // Scan pdf files
     let mut pdf_files: Vec<_> = WalkDir::new(input_dir)
@@ -17,6 +28,15 @@ pub fn run(input_dir: &Path, output: &Path, pages_spec: Option<&str>) -> Result<
         .filter(|e| e.file_type().is_file())
         .filter(|e| e.path().extension().map(|ext| ext.eq_ignore_ascii_case("pdf")).unwrap_or(false))
         .filter(|e| e.path() != output)
+        .filter(|e| {
+            let rel = e.path().strip_prefix(input_dir).unwrap_or(e.path());
+            let rel_path = rel;
+            // include logic: if include_set is empty, include by default; else must match one
+            let include_ok = if include_set.is_empty() { true } else { include_set.is_match(rel_path) };
+            // exclude logic: if matches any exclude, drop
+            let exclude_hit = if exclude_set.is_empty() { false } else { exclude_set.is_match(rel_path) };
+            include_ok && !exclude_hit
+        })
         .map(|e| e.path().to_owned())
         .collect();
     pdf_files.sort();
@@ -82,4 +102,16 @@ fn merge_selected_pages(files: &[PathBuf], output: &Path, pages_spec: Option<&st
     doc.compress();
     doc.save(output)?;
     Ok(())
+}
+
+fn build_globset(patterns: &[String]) -> Result<GlobSet, String> {
+    if patterns.is_empty() {
+        return Ok(GlobSetBuilder::new().build().map_err(|e| e.to_string())?);
+    }
+    let mut builder = GlobSetBuilder::new();
+    for pat in patterns {
+        let g = Glob::new(pat).map_err(|e| format!("{} ({})", pat, e))?;
+        builder.add(g);
+    }
+    builder.build().map_err(|e| e.to_string())
 }

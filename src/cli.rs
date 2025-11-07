@@ -36,11 +36,17 @@ pub struct MergeArgs {
     /// Page spec applied to each input, e.g. "1-3,5,10-"
     #[arg(long, value_name = "SPEC")]
     pub pages: Option<String>,
+    /// Include only files matching these globs (relative to input_dir). Repeatable.
+    #[arg(long, value_name = "GLOB")]
+    pub include: Vec<String>,
+    /// Exclude files matching these globs (relative to input_dir). Repeatable.
+    #[arg(long, value_name = "GLOB")]
+    pub exclude: Vec<String>,
 }
 
 impl Default for MergeArgs {
     fn default() -> Self {
-        MergeArgs { input_dir: ".".into(), output: "merged.pdf".into(), pages: None }
+        MergeArgs { input_dir: ".".into(), output: "merged.pdf".into(), pages: None, include: vec![], exclude: vec![] }
     }
 }
 
@@ -52,7 +58,7 @@ pub struct SplitArgs {
     /// Output directory
     #[arg(short = 'd', long, value_name = "DIR", default_value = ".")]
     pub out_dir: PathBuf,
-    /// One file per page
+    /// One file per page (default if --ranges not provided)
     #[arg(long, conflicts_with = "ranges")]
     pub each: bool,
     /// Ranges to split, e.g. "1-3,4-6,7-" (one output per range)
@@ -62,4 +68,3 @@ pub struct SplitArgs {
     #[arg(long, value_name = "PATTERN", default_value = "{base}-{start}-{end}.pdf")]
     pub pattern: String,
 }
-
