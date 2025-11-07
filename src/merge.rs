@@ -70,7 +70,12 @@ fn merge_selected_pages(files: &[PathBuf], output: &Path, pages_spec: Option<&st
     let mut page_ids: Vec<ObjectId> = Vec::new();
 
     for path in files {
-        pb.set_message(path.file_name().and_then(|s| s.to_str()).unwrap_or("加载中..."));
+        let msg = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "加载中...".to_string());
+        pb.set_message(msg);
         let mut pdf = Document::load(path)
             .with_context(|| format!("加载 PDF 失败: {}", path.display()))?;
         let total_pages = pdf.get_pages().len();
