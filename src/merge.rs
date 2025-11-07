@@ -1,11 +1,11 @@
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use lopdf::{Dictionary, Document, Object, ObjectId};
 use std::path::{Path, PathBuf};
-use indicatif::{ProgressBar, ProgressStyle};
 use anyhow::{Context, Result};
 use walkdir::WalkDir;
 
 use crate::spec;
+use crate::progress::ProgressSink;
 
 pub fn run(
     input_dir: &Path,
@@ -14,6 +14,7 @@ pub fn run(
     includes: &[String],
     excludes: &[String],
     force: bool,
+    progress: &dyn ProgressSink,
 ) -> Result<()> {
     // Resolve output directory
     if let Some(parent) = output.parent() {
@@ -48,20 +49,14 @@ pub fn run(
     if pdf_files.is_empty() {
         anyhow::bail!("未在目录中找到 PDF: {}", input_dir.display());
     }
-
-    // Progress bar per file
-    let pb = ProgressBar::new(pdf_files.len() as u64);
-    pb.set_style(ProgressStyle::with_template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
-        .unwrap()
-        .progress_chars("##-"));
-    pb.set_message("准备合并...");
-
-    merge_selected_pages(&pdf_files, output, pages_spec, &pb, force)?;
-    pb.finish_with_message("合并完成");
+    progress.set_len(pdf_files.len() as u64);
+    progress.set_message(std::borrow::Cow::from("准备合并..."));
+    merge_selected_pages(&pdf_files, output, pages_spec, progress, force)?;
+    progress.finish(std::borrow::Cow::from("合并完成"));
     Ok(())
 }
 
-fn merge_selected_pages(files: &[PathBuf], output: &Path, pages_spec: Option<&str>, pb: &ProgressBar, force: bool) -> Result<()> {
+fn merge_selected_pages(files: &[PathBuf], output: &Path, pages_spec: Option<&str>, progress: &dyn ProgressSink, force: bool) -> Result<()> {
     // Overwrite protection handled here to ensure we fail early
     if output.exists() && !force {
         anyhow::bail!("输出文件已存在: {} (使用 --force 覆盖)", output.display());
@@ -75,7 +70,7 @@ fn merge_selected_pages(files: &[PathBuf], output: &Path, pages_spec: Option<&st
             .and_then(|s| s.to_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| "加载中...".to_string());
-        pb.set_message(msg);
+        progress.set_message(std::borrow::Cow::from(msg));
         let mut pdf = Document::load(path)
             .with_context(|| format!("加载 PDF 失败: {}", path.display()))?;
         let total_pages = pdf.get_pages().len();
@@ -100,7 +95,7 @@ fn merge_selected_pages(files: &[PathBuf], output: &Path, pages_spec: Option<&st
         }
         page_ids.extend(current);
         doc.objects.extend(pdf.objects);
-        pb.inc(1);
+        progress.inc(1);
     }
 
     let pages_id = doc.new_object_id();

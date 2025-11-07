@@ -14,6 +14,9 @@ pub enum Commands {
     Merge(MergeArgs),
     /// Split a single PDF into multiple files
     Split(SplitArgs),
+    /// Launch terminal UI (requires `tui` feature)
+    #[cfg(feature = "tui")]
+    Tui(TuiArgs),
 }
 
 impl Cli {
@@ -73,4 +76,15 @@ pub struct SplitArgs {
     /// Overwrite output files if they already exist
     #[arg(long)]
     pub force: bool,
+}
+
+#[derive(Args, Debug)]
+#[cfg(feature = "tui")]
+pub struct TuiArgs {
+    /// Theme name, e.g. gitui-dark
+    #[arg(long)]
+    pub theme: Option<String>,
+    /// Theme file (TOML)
+    #[arg(long, value_name = "FILE")]
+    pub theme_file: Option<PathBuf>,
 }

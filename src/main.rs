@@ -2,10 +2,14 @@ mod cli;
 mod merge;
 mod spec;
 mod split;
+mod progress;
+#[cfg(feature = "tui")]
+mod tui;
 
 use cli::{Cli, Commands};
 use clap::Parser;
 use std::path::PathBuf;
+use progress::{IndicatifProgress, ProgressSink};
 
 fn main() {
     let cmd = Cli::parse().default_to_merge();
@@ -18,7 +22,8 @@ fn main() {
                 output_path = new_path;
             }
             let input_dir = PathBuf::from(&args.input_dir);
-            if let Err(e) = merge::run(&input_dir, &output_path, args.pages.as_deref(), &args.include, &args.exclude, args.force) {
+            let pb = IndicatifProgress::new();
+            if let Err(e) = merge::run(&input_dir, &output_path, args.pages.as_deref(), &args.include, &args.exclude, args.force, &pb) {
                 eprintln!("❌ 合并失败: {}", e);
                 std::process::exit(1);
             }
@@ -26,11 +31,19 @@ fn main() {
         }
         Commands::Split(args) => {
             let each = if args.ranges.is_none() { true } else { args.each };
-            if let Err(e) = split::run(&args.input, &args.out_dir, each, args.ranges.as_deref(), &args.pattern, args.force) {
+            let pb = IndicatifProgress::new();
+            if let Err(e) = split::run(&args.input, &args.out_dir, each, args.ranges.as_deref(), &args.pattern, args.force, &pb) {
                 eprintln!("❌ 分割失败: {}", e);
                 std::process::exit(1);
             }
             println!("✅ 分割完成 -> {}", args.out_dir.display());
+        }
+        #[cfg(feature = "tui")]
+        Commands::Tui(args) => {
+            if let Err(e) = tui::run(args.theme, args.theme_file) {
+                eprintln!("❌ TUI 启动失败: {}", e);
+                std::process::exit(1);
+            }
         }
     }
 }

@@ -1,11 +1,11 @@
 use lopdf::{Dictionary, Document, Object, ObjectId};
 use std::path::Path;
-use indicatif::{ProgressBar, ProgressStyle};
 use anyhow::{Result, Context};
+use crate::progress::ProgressSink;
 
 use crate::spec::{self, PageRange};
 
-pub fn run(input: &Path, out_dir: &Path, each: bool, ranges_spec: Option<&str>, pattern: &str, force: bool) -> Result<()> {
+pub fn run(input: &Path, out_dir: &Path, each: bool, ranges_spec: Option<&str>, pattern: &str, force: bool, progress: &dyn ProgressSink) -> Result<()> {
     std::fs::create_dir_all(out_dir)
         .with_context(|| format!("创建输出目录失败: {}", out_dir.display()))?;
 
@@ -26,9 +26,8 @@ pub fn run(input: &Path, out_dir: &Path, each: bool, ranges_spec: Option<&str>, 
         anyhow::bail!("请使用 --each 或 --ranges 指定分割方式");
     };
 
-    let pb = ProgressBar::new(groups.len() as u64);
-    pb.set_style(ProgressStyle::with_template("[{elapsed_precise}] [{bar:40.green/blue}] {pos}/{len} {msg}").unwrap().progress_chars("##-"));
-    pb.set_message("准备分割...");
+    progress.set_len(groups.len() as u64);
+    progress.set_message(std::borrow::Cow::from("准备分割..."));
 
     for (idx, g) in groups.iter().enumerate() {
         let start = g.start.max(1);
@@ -86,9 +85,9 @@ pub fn run(input: &Path, out_dir: &Path, each: bool, ranges_spec: Option<&str>, 
         }
         if let Some(parent) = out_path.parent() { std::fs::create_dir_all(parent).ok(); }
         out_doc.save(&out_path).with_context(|| format!("写入输出失败: {}", out_path.display()))?;
-        pb.inc(1);
+        progress.inc(1);
     }
-    pb.finish_with_message("分割完成");
+    progress.finish(std::borrow::Cow::from("分割完成"));
     Ok(())
 }
 
