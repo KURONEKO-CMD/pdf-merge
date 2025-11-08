@@ -6,12 +6,12 @@
 - 后端继续使用 `lopdf`，当前阶段不引入 tokio。
 
 ### UX & Layout
-- 顶部：标题、模式（Merge/Split/Settings/Logs）、输入/输出、过滤、force 状态。
-- 左侧（Files）：递归列出 PDF，勾选/排除、搜索过滤、显示页数。
-- 右侧（Selection/Order）：最终合并顺序或分割预览；上/下移动；应用页码范围。
-- 底部：提示、进度、最后错误。
-- 弹窗：编辑路径、范围（`1-3,5,10-`）、split 命名模板、覆盖确认、帮助（`?`）。
-- 键位建议：Tab/Shift+Tab 切换；↑/↓ 或 j/k 导航；Space 选择；x 排除；/ 搜索；u/d 移动，U/D 置顶/底；p 范围；o/t 输出/模板；F Force；Enter 运行；? 帮助；q 退出。
+- 顶部 Tabs + 信息：Tabs 为 `Files | Dirs | Mode`；信息行展示 `Input/Depth/Selected/Output/Pages/Mode`，扫描中显示 `Scanning...`。
+- 左栏（Files）：PDF 列表；Space 选择；j/k/↑/↓ 导航；u/d/U/D 调整右栏顺序；p 编辑页码范围；o 编辑输出；F 覆盖；Enter 运行。
+- 右栏（Selection/Order）：展示/调整合并顺序。
+- 目录栏（Dirs，后续）：显示子目录；h/Backspace/← 返回上层；l/Enter/→ 进入；切换目录后重扫 Files。
+- 底部 Footer：状态行 + 帮助行（`Quit:q  Focus:Tab  Select:Space  Move:↑/↓/j/k  Reorder:u/d/U/D  Rescan:r  Depth:[ ] \  Output:o  Pages:p  Force:F  Run:Enter`）。
+- Mode 子菜单：在 `Mode` Tab 上 Enter 弹出（Merge/Split），↑/↓/j/k 选择，Enter 确认，Esc 取消。
 
 ### Architecture
 - Feature：`tui`（可选编译）。依赖：`ratatui`、`crossterm`（仅在 feature 启用时）。
@@ -41,9 +41,10 @@ pub trait ProgressSink: Send + Sync {
 #### 扫描与过滤
 - 复用 `walkdir` + `globset`；已抽出 `ScanConfig`。
 - TUI 默认深度=1，可用 `[`/`]`/`\` 调整并重扫；采用流式 `scan_stream()` + 取消句柄以避免阻塞与线程堆积。
+- 目录浏览：在 `scan.rs` 增加 `list_dirs(input_dir, follow_links, show_hidden)`；导航更新 `input_dir` 并重扫。
 
 ### Theming（gitui 风格）
-- `tui/theme.rs` 将逻辑角色映射到 `ratatui::style::Style`。
+- `tui/theme.rs` 提供 Theme 结构与风格方法（借鉴 gitui）：`block(focus)/title(focus)/tab(selected)/text(enabled,selected)` 等。
 - 外部主题（TOML）：
 ```toml
 [theme]
@@ -61,14 +62,10 @@ warn="#d29922"; error="#f85149"; ok="#2ea043"
 - 共享现有过滤（`--include/--exclude`）、语义（`--force`、页码范围、模板）。
 
 ### Plan / Milestones
-1) 抽象 `ProgressSink` 并改造 merge/split 接口（CLI 保持原样）。
-2) 加入 `tui` feature 与依赖；搭建入口/事件循环/空布局。
-3) 文件扫描与过滤；列表选择与搜索。
-4) 选择/排序面板、范围编辑；输出/模板弹窗；Force 开关。
-5) 后台 Job（合并/分割）+ 进度与日志；完成结果提示。
-6) 主题系统 + 默认主题；外部 TOML 主题加载；运行时切换。
-7) 测试：AppState reducer、Job 生命周期、进度通道；UI buffer 快照。
-8) 打磨：错误条、帮助页、配置持久化（`~/.config/pdf-ops/config.toml`）。
+1) Tabs 与 Mode 子菜单；主题接线到边框/高亮/标题/状态/帮助。
+2) Dirs 面板与目录导航；`list_dirs()` 与重扫集成。
+3) Split 模式接入；模板编辑弹窗；帮助弹窗（?）。
+4) 键位配置与持久化（可选）。
 
 ### 非目标（初期）
 - 不做 PDF 渲染预览；不引入 tokio；不支持远程来源。

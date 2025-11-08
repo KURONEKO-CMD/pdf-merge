@@ -7,6 +7,8 @@ use ratatui::{prelude::*, widgets::*};
 use std::{io::stdout, path::PathBuf, sync::mpsc, thread, time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering, AtomicU64}}};
 
 use crate::scan::{self, ScanConfig, ScanEvent, CancelHandle};
+mod theme;
+use theme::Theme;
 
 struct FileItem {
     name: String,
@@ -20,6 +22,9 @@ enum Focus { Left, Right }
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum InputMode { None, EditOutput, EditPages }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum Mode { Merge, Split }
+
 struct AppState {
     input_dir: PathBuf,
     files: Vec<FileItem>,
@@ -32,6 +37,7 @@ struct AppState {
     order: Vec<usize>, // indexes into files
     order_selected: usize,
     focus: Focus,
+    mode: Mode,
     // run options
     force: bool,
     // job
@@ -42,6 +48,7 @@ struct AppState {
     // input overlay
     input_mode: InputMode,
     input_buffer: String,
+    theme: Theme,
 }
 
 impl AppState {
@@ -51,19 +58,21 @@ impl AppState {
             input_dir,
             files: Vec::new(),
             selected: 0,
-            status: String::from("按 q 退出，Tab 切换面板，Space 选择，↑/↓ 导航，u/d 调整顺序，Enter 运行，r 重扫，[ / ] 深度，\\ 无限，F 覆盖"),
+            status: String::from("Quit: q  Focus: Tab  Select: Space  Move: ↑/↓/j/k  Reorder: u/d/U/D  Rescan: r  Depth: [ ] \\  Output: o  Pages: p  Force: F  Run: Enter"),
             scanning: true,
             scan_depth: Some(1),
             cancel: None,
             order: Vec::new(),
             order_selected: 0,
             focus: Focus::Left,
+            mode: Mode::Merge,
             force: false,
             job_running: false,
             output: output_default,
             pages: None,
             input_mode: InputMode::None,
             input_buffer: String::new(),
+            theme: Theme::gitui_dark(),
         }
     }
 }
@@ -102,6 +111,7 @@ pub fn run(_theme: Option<String>, _theme_file: Option<PathBuf>, input_dir: Path
 
     let (tx, rx) = mpsc::channel::<UiMsg>();
     let mut app = AppState::new(input_dir);
+    app.status = "Ready".into();
 
     // spawn initial scan
     spawn_scan(&mut app, tx.clone());
@@ -115,17 +125,17 @@ pub fn run(_theme: Option<String>, _theme_file: Option<PathBuf>, input_dir: Path
                     app.files.push(FileItem{ name: p.file_name().and_then(|s| s.to_str()).unwrap_or("?").to_string(), path: p, checked: false });
                     if app.selected >= app.files.len() { app.selected = app.files.len().saturating_sub(1); }
                 }
-                UiMsg::Error(e) => { app.status = format!("扫描失败: {}", e); }
+                UiMsg::Error(e) => { app.status = format!("Scan error: {}", e); }
                 UiMsg::Done => { app.scanning = false; }
                 UiMsg::Progress { pos, len, msg } => {
                     let msg_part = if msg.is_empty() { String::new() } else { format!(" · {}", msg) };
-                    app.status = format!("进度: {}/{}{}", pos, len, msg_part);
+                    app.status = format!("Progress: {}/{}{}", pos, len, msg_part);
                 }
                 UiMsg::JobDone(res, note) => {
                     app.job_running = false;
                     match res {
-                        Ok(()) => app.status = format!("✅ 完成: {}", note),
-                        Err(e) => app.status = format!("❌ 失败: {} · {}", note, e),
+                        Ok(()) => app.status = format!("✓ Done: {}", note),
+                        Err(e) => app.status = format!("× Failed: {} · {}", note, e),
                     }
                 }
             }
@@ -260,7 +270,7 @@ fn spawn_scan(app: &mut AppState, tx: mpsc::Sender<UiMsg>) {
 }
 
 fn rescan(app: &mut AppState, tx: mpsc::Sender<UiMsg>) {
-    app.status = "重新扫描中...".into();
+    app.status = "Rescanning...".into();
     spawn_scan(app, tx);
 }
 
@@ -271,17 +281,17 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &AppState) {
         .constraints([
             Constraint::Length(3), // header
             Constraint::Min(1),    // main
-            Constraint::Length(1), // status
+            Constraint::Length(2), // status + help
         ])
         .split(size);
 
     // Header
     let depth = app.scan_depth.map(|d| d.to_string()).unwrap_or("∞".into());
-    let pages = app.pages.clone().unwrap_or_else(|| "(全部)".into());
+    let pages = app.pages.clone().unwrap_or_else(|| "(all)".into());
     let out_disp = if app.output.is_relative() { app.input_dir.join(&app.output) } else { app.output.clone() };
-    let title = format!("pdf-ops · 输入: {} · 深度: {} · 选中: {} · 输出: {} · 页码: {}{}",
+    let title = format!("pdf-ops · Input: {} · Depth: {} · Selected: {} · Output: {} · Pages: {}{}",
         app.input_dir.display(), depth, app.order.len(), out_disp.display(), pages,
-        if app.scanning { " · 扫描中..." } else { "" }
+        if app.scanning { " · Scanning..." } else { "" }
     );
     let header = Paragraph::new(title)
         .block(Block::default().borders(Borders::ALL).title("Merge/Split"));
@@ -320,15 +330,22 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &AppState) {
     if !app.order.is_empty() { sel_state.select(Some(app.order_selected)); }
     f.render_stateful_widget(sel_list, main[1], &mut sel_state);
 
-    // Status bar and optional input overlay
-    let status = Paragraph::new(match app.input_mode { InputMode::None => app.status.clone(), _ => format!("{}: {}", app.status, app.input_buffer) });
-    f.render_widget(status, chunks[2]);
+    // Status + Help bar (split bottom area into two lines)
+    let footer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(chunks[2]);
+    let status_text = match app.input_mode { InputMode::None => app.status.clone(), _ => format!("{}: {}", app.status, app.input_buffer) };
+    let status = Paragraph::new(status_text);
+    f.render_widget(status, footer[0]);
+    let help = Paragraph::new("Quit: q  Focus: Tab  Select: Space  Move: ↑/↓/j/k  Reorder: u/d/U/D  Rescan: r  Depth: [ ] \\  Output: o  Pages: p  Force: F  Run: Enter");
+    f.render_widget(help, footer[1]);
 
     // Simple overlay box when in input mode
     if app.input_mode != InputMode::None {
         let area = centered_rect(60, 20, f.size());
         let prompt = Paragraph::new(app.input_buffer.clone())
-            .block(Block::default().title(match app.input_mode { InputMode::EditOutput => "输出路径", InputMode::EditPages => "页码范围", InputMode::None => "" }).borders(Borders::ALL));
+            .block(Block::default().title(match app.input_mode { InputMode::EditOutput => "Output Path", InputMode::EditPages => "Page Ranges", InputMode::None => "" }).borders(Borders::ALL));
         f.render_widget(Clear, area);
         f.render_widget(prompt, area);
     }
