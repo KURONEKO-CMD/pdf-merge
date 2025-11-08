@@ -15,15 +15,20 @@
     - `src/merge.rs`（合并核心）
     - `src/split.rs`（分割功能，预留）
     - `src/spec.rs`（页码/范围解析，预留）
-    - `src/scan.rs`（扫描目录与过滤：`ScanConfig`、同步与流式接口）
+    - `src/scan.rs`（扫描目录与过滤：`ScanConfig`、同步与流式接口；支持 max_depth=None=∞；流式扫描支持取消）
+    - `src/pathutil.rs`（路径规范化：去引号、Unix `\ ` 空格还原、`~` 展开；带单元测试）
     - `src/tui/`（TUI，feature = `tui`）：
       - `tui/mod.rs`（事件循环、UI 绘制、状态）
-      - `tui/theme.rs`（主题系统，借鉴 gitui：提供风格方法而非散落颜色）
-      - 计划：顶部 Tabs（Files/Dirs/Mode）、Mode 子菜单、Dirs 面板与导航、帮助弹窗等
+      - `tui/theme.rs`（主题系统，高对比度深色主题；全局加粗）
+      - 顶部 Tabs（Files / Mode / Options / Help）；Help 弹窗为英文，概述键位与 Options 功能
+      - Options：Depth(1/2/3/∞)、Split range（每文件页数）、Overwrite（Force/Suffix）、Output auto-follow
+      - Split > 20 输出弹确认；输入弹窗支持换行与可视光标
 - 可在后续按需引入 `src/lib.rs` 暴露复用 API，但不强制全部迁移至 `lib`。
 
 ## 测试 / Tests
-- 单元测试：建议写在各模块内部（`mod tests`）。
+- 单元测试：建议写在各模块内部（`mod tests`）。已包含：
+  - `pathutil`：路径规范化
+  - `scan`：含空格目录的扫描
 - 集成测试：放在 `tests/` 目录，用于端到端验证 CLI 行为（TUI 交互以人工测试 + 纯状态单测为主）。
 
 ## 构建与运行 / Build & Run

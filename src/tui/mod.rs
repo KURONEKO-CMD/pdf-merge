@@ -618,12 +618,12 @@ fn draw(f: &mut ratatui::Frame<'_>, app: &AppState) {
 
     // Simple overlay box when in input mode
         if app.input_mode != InputMode::None {
-        let popup_h = match app.input_mode {
-            InputMode::FilesMenu | InputMode::OptionsMenu | InputMode::PickDepth | InputMode::PickOverwrite => 40,
-            InputMode::Help => 60,
-            _ => 20,
+        let (popup_w, popup_h) = match app.input_mode {
+            InputMode::FilesMenu | InputMode::OptionsMenu | InputMode::PickDepth | InputMode::PickOverwrite => (60, 40),
+            InputMode::Help => (80, 60),
+            _ => (60, 20),
         };
-        let area = centered_rect(60, popup_h, f.size());
+        let area = centered_rect(popup_w, popup_h, f.size());
         match app.input_mode {
             InputMode::PickMode => {
                 // 模式选择弹窗：Merge / Split

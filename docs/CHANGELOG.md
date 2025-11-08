@@ -28,3 +28,22 @@
 ## [0.1.0] - Initial
 ### Added
 - 初始版本：递归合并目录内 PDF，按路径字典序排序，默认输出为输入目录下 `merged.pdf`。
+# Changelog
+
+## [Unreleased]
+### Added
+- TUI Help dialog (English), centered popup with full keyboard + Options overview
+- Options menu: Depth (1/2/3/∞), Split range (pages per file), Overwrite (Force/Suffix), Output auto-follow
+- Split preflight confirmation when outputs > 20 (y/N)
+- Path sanitizer for input dialogs: quotes removal, Unix `\ ` unescape, `~` expansion
+- Input overlays: multiline with visible caret
+
+### Changed
+- Overwrite default strategy to Suffix (append `_1/_2/...`) for both Merge/Split in TUI
+- Confirmation and info popups centered; higher popup height for Options/Help
+- Docs updated (README, docs/README, PROJECT_STRUCTURE, TUI_DESIGN, PLAN)
+
+### Fixed
+- Split no longer fails when output exists; generates suffixed names instead
+- Scan idle timeout cancels scanning to free resources
+- Various warnings cleanup in tests and UI
